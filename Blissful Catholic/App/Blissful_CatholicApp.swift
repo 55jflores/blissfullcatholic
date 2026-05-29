@@ -37,7 +37,21 @@ struct Blissful_CatholicApp: App {
             .environment(profile)
             .environment(theme)
             .environment(auth)
-            .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
+            .onOpenURL { url in
+                if GIDSignIn.sharedInstance.handle(url) { return }
+                Task { await auth.handle(url: url) }
+            }
+            .alert(
+                "Blissful Catholic",
+                isPresented: Binding(
+                    get: { auth.authNotice != nil },
+                    set: { if !$0 { auth.authNotice = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { auth.authNotice = nil }
+            } message: {
+                Text(auth.authNotice ?? "")
+            }
         }
         .modelContainer(modelContainer)
     }

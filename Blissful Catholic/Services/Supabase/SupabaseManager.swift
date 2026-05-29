@@ -27,6 +27,11 @@ enum SupabaseConfig {
 
     /// The Next.js backend that proxies AI calls (iOS → Next.js → Claude).
     static let apiBaseURL = URL(string: "https://blissfulcatholic.com")!
+
+    /// Deep link Supabase redirects to after email confirmation / magic links.
+    /// Registered as a URL scheme in the target's Info → URL Types, and added to
+    /// Supabase → Auth → URL Configuration → Redirect URLs.
+    static let authRedirectURL = URL(string: "blissfulcatholic://auth-callback")!
 }
 
 /// App-wide Supabase client singleton.

@@ -35,6 +35,10 @@ final class AuthStore {
     var isSignedIn: Bool { session != nil }
     var email: String? { session?.user.email }
 
+    /// One-shot message to surface after an auth deep link resolves (shown by the
+    /// app root, then cleared).
+    var authNotice: String?
+
     private let client = SupabaseManager.shared.client
 
     init() {
@@ -53,8 +57,24 @@ final class AuthStore {
     /// immediately; if it's ON, `session` stays nil and the caller should tell the
     /// user to check their inbox.
     func signUp(email: String, password: String) async throws {
-        _ = try await client.auth.signUp(email: email, password: password)
+        _ = try await client.auth.signUp(
+            email: email,
+            password: password,
+            redirectTo: SupabaseConfig.authRedirectURL
+        )
         session = try? await client.auth.session
+    }
+
+    /// Completes an auth deep link (email confirmation, magic link). Auto-signs the
+    /// user in when possible; otherwise reports that the email is confirmed (the
+    /// verify step already confirmed it server-side before this redirect).
+    func handle(url: URL) async {
+        do {
+            session = try await client.auth.session(from: url)
+            authNotice = "You're signed in. Welcome."
+        } catch {
+            authNotice = "Your email is confirmed. Please sign in."
+        }
     }
 
     // MARK: Google (native)

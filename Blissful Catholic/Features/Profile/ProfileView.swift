@@ -287,11 +287,11 @@ struct ProfileView: View {
 
     // MARK: Preferences (sample)
 
-    private let preferences: [(name: String, value: String)] = [
-        ("Daily reminder", "7:00 AM"),
-        ("Bible translation", "RSV-2CE"),
-        ("Parish", "St. Cecilia"),
-        ("iCloud sync", "On"),
+    private let preferences: [(name: String, value: String, comingSoon: Bool)] = [
+        ("Daily reminder", "7:00 AM", false),
+        ("Bible translation", "RSV-2CE", false),
+        ("Parish", "St. Cecilia", false),
+        ("iCloud sync", "Coming soon", true),
     ]
 
     private var preferencesSection: some View {
@@ -304,9 +304,12 @@ struct ProfileView: View {
                             Text(row.name).font(LumenType.serif(14)).foregroundStyle(t.ink)
                             Spacer()
                             Text(row.value).font(LumenType.ui(12)).foregroundStyle(t.inkSoft)
-                            Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(t.inkSoft)
+                            if !row.comingSoon {
+                                Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(t.inkSoft)
+                            }
                         }
                         .padding(.horizontal, 18).padding(.vertical, 14)
+                        .opacity(row.comingSoon ? 0.5 : 1)
                         .overlay(alignment: .top) {
                             if i > 0 { Rectangle().fill(t.ruleSoft).frame(height: 0.5) }
                         }

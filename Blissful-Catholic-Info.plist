@@ -12,6 +12,14 @@
 				<string>com.googleusercontent.apps.222756209200-ucjcvrhuaq7i9iqc8od57366ucllrj4c</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>blissfulcatholic</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

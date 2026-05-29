@@ -107,6 +107,11 @@ struct SignInView: View {
             .padding(24)
         }
         .background(t.bg.ignoresSafeArea())
+        // If a deep link (email confirmation) signs the user in while this sheet
+        // is still open, close it.
+        .onChange(of: auth.isSignedIn) { _, signedIn in
+            if signedIn { dismiss() }
+        }
     }
 
     private var header: some View {
