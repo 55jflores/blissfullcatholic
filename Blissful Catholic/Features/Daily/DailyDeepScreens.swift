@@ -12,13 +12,12 @@ import SwiftUI
 
 // MARK: - Reading
 
-/// A Mass reading, passed from Daily into the detail screen.
+/// A Mass reading, passed from Daily into the detail screen. The body text is
+/// resolved on demand from bundled WEBCE in ReadingScreen; only the citation
+/// travels in the route value.
 struct ReadingItem: Hashable {
-    let label: String      // "First Reading"
-    let citation: String   // "Acts 18:9–18"
-    let heading: String    // "A reading from the Acts of the Apostles."
-    let body: String       // full passage; paragraphs separated by "\n\n"
-    let response: String   // "Thanks be to God." / "Praise to you, Lord Jesus Christ."
+    let label: String      // "First Reading" / "Responsorial Psalm" / "Second Reading" / "Gospel"
+    let citation: String   // e.g. "Acts 18:9–18", "Daniel 3:52, 53, 54, 55, 56"
 }
 
 struct ReadingScreen: View {
@@ -27,6 +26,8 @@ struct ReadingScreen: View {
     @Environment(\.lumenPalette) private var pal
     @Environment(\.dismiss) private var dismiss
     @State private var showLectio = false
+    @State private var verses: [BibleVerse] = []
+    @State private var isLoading = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,25 +37,17 @@ struct ReadingScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Eyebrow(text: reading.label, color: pal.accent).padding(.bottom, 10)
-                    Text(reading.heading)
-                        .font(LumenType.display(30))
-                        .foregroundStyle(t.ink)
-                        .tracking(-0.4)
                     Ornament(color: pal.accent).frame(maxWidth: 220).padding(.vertical, 22)
 
-                    DropCapText(reading.body)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Eyebrow(text: "The Word of the Lord", color: t.inkSoft)
-                        Text(reading.response)
-                            .font(LumenType.display(18).italic())
-                            .foregroundStyle(t.ink)
+                    if isLoading {
+                        loadingState
+                    } else if verses.isEmpty {
+                        unresolvedState
+                    } else {
+                        DropCapText(formattedBody)
+                        responseBox
+                        translationFooter
                     }
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(t.surface2, in: .rect(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(t.rule, lineWidth: 0.5))
-                    .padding(.top, 24)
 
                     AICTAButton(title: "Pray this with Lectio Divina",
                                 subtitle: "A guided, prayerful reading") {
@@ -69,14 +62,102 @@ struct ReadingScreen: View {
         }
         .background(t.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .task { await loadVerses() }
         .sheet(isPresented: $showLectio) {
             AIReflectionView(
                 feature: "lectio",
-                prompt: "Lead me in praying Lectio Divina with this passage — \(reading.citation):\n\n\(reading.body)",
+                prompt: lectioPrompt,
                 title: "Lectio Divina",
                 reason: "Sign in to pray Lectio Divina."
             )
         }
+    }
+
+    // MARK: States
+
+    private var loadingState: some View {
+        HStack(spacing: 8) {
+            ProgressView().tint(pal.accent)
+            Text("Loading the passage…")
+                .font(LumenType.serif(14).italic()).foregroundStyle(t.inkMid)
+        }
+        .padding(.top, 4)
+    }
+
+    private var unresolvedState: some View {
+        Text("This passage couldn't be resolved against the bundled translation. Try checking the citation against your Bible or missal.")
+            .font(LumenType.serif(15))
+            .foregroundStyle(t.inkMid)
+            .lineSpacing(4)
+    }
+
+    /// The liturgical response after the reading. Skipped for the Responsorial
+    /// Psalm, which has its own antiphon-based response pattern (the assembly's
+    /// refrain repeats between strophes), not "The Word of the Lord."
+    @ViewBuilder
+    private var responseBox: some View {
+        if reading.label != "Responsorial Psalm" {
+            VStack(alignment: .leading, spacing: 6) {
+                Eyebrow(text: responseLabel, color: t.inkSoft)
+                Text(responseText)
+                    .font(LumenType.display(18).italic())
+                    .foregroundStyle(t.ink)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(t.surface2, in: .rect(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(t.rule, lineWidth: 0.5))
+            .padding(.top, 24)
+        }
+    }
+
+    private var translationFooter: some View {
+        Text("World English Bible · Catholic Edition · Public Domain")
+            .font(LumenType.ui(10).italic())
+            .foregroundStyle(t.inkSoft)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 16)
+    }
+
+    // MARK: Derived
+
+    /// Concatenates the resolved verses; inserts a blank line between verses
+    /// that aren't consecutive (lectionary citations like "Ex 34:4b-6, 8-9"
+    /// resolve to a sequence with a gap between 6 and 8).
+    private var formattedBody: String {
+        var result = ""
+        var prev: BibleVerse?
+        for v in verses {
+            if let p = prev {
+                let consecutive = (v.chapter == p.chapter && v.verse == p.verse + 1)
+                result += consecutive ? " " : "\n\n"
+            }
+            result += v.text
+            prev = v
+        }
+        return result
+    }
+
+    private var responseLabel: String {
+        reading.label == "Gospel" ? "The Gospel of the Lord" : "The Word of the Lord"
+    }
+
+    private var responseText: String {
+        reading.label == "Gospel"
+            ? "Praise to you, Lord Jesus Christ."
+            : "Thanks be to God."
+    }
+
+    private var lectioPrompt: String {
+        if verses.isEmpty {
+            return "Lead me in praying Lectio Divina with this passage — \(reading.citation)."
+        }
+        return "Lead me in praying Lectio Divina with this passage — \(reading.citation):\n\n\(formattedBody)"
+    }
+
+    private func loadVerses() async {
+        verses = await BibleService.shared.verses(forCitation: reading.citation)
+        isLoading = false
     }
 }
 

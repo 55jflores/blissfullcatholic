@@ -23,13 +23,14 @@ struct DailyView: View {
 
     @State private var prayed = false
     @State private var showReflection = false
+    @State private var liturgy = LiturgyStore()
     private let now = Date()
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    LumenScreenHeader(eyebrow: "\(pal.name) · \(weekday)", title: monthDay) {
+                    LumenScreenHeader(eyebrow: headerEyebrow, title: monthDay) {
                         LumenIconButton(systemImage: "bell")
                     }
 
@@ -60,6 +61,8 @@ struct DailyView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
+            .task { await liturgy.loadToday() }
+            .task(id: liturgy.today?.date) { await loadReadingPreviews() }
         }
         .sheet(isPresented: $showReflection) {
             AIReflectionView(
@@ -95,79 +98,65 @@ struct DailyView: View {
 
     // MARK: Mass readings
 
-    private let readings: [ReadingItem] = [
-        ReadingItem(
-            label: "First Reading", citation: "Acts 18:9–18",
-            heading: "A reading from the Acts of the Apostles.",
-            body: """
-            In those days, the Lord said to Paul in a vision during the night, "Do not be afraid. Go on speaking, and do not be silent, for I am with you. No one will attack and harm you, for I have many people in this city." He settled there for a year and a half and taught the word of God among them.
+    /// Today's readings derived from `liturgy.today` — nil while the liturgy is
+    /// loading or if the upstream readings source is unreachable.
+    private var readings: [ReadingItem]? {
+        guard let raw = liturgy.today?.readings else { return nil }
+        return raw.map { ReadingItem(label: $0.label, citation: $0.citation) }
+    }
 
-            When Gallio was proconsul of Achaia, the Jews rose up together against Paul and brought him to the tribunal. But Gallio said, "Since it is a question of arguments over doctrine and your own law, see to it yourselves. I do not wish to be a judge of such matters." And he drove them away from the tribunal.
-            """,
-            response: "The Word of the Lord. Thanks be to God."),
-        ReadingItem(
-            label: "Responsorial", citation: "Psalm 47:2–7",
-            heading: "God is king of all the earth.",
-            body: """
-            All you peoples, clap your hands; shout to God with cries of gladness. For the LORD, the Most High, the awesome, is the great king over all the earth.
+    /// First-verse preview text per citation, resolved from bundled WEBCE.
+    /// Populated by `loadReadingPreviews()` once readings are known.
+    @State private var readingPreviews: [String: String] = [:]
 
-            God reigns over the nations, God sits upon his holy throne. Sing praise to God, sing praise; sing praise to our king, sing praise.
-            """,
-            response: "Sing praise to God, sing praise."),
-        ReadingItem(
-            label: "Gospel", citation: "John 16:20–23",
-            heading: "A reading from the holy Gospel according to John.",
-            body: """
-            Jesus said to his disciples: "Amen, amen, I say to you, you will weep and mourn, while the world rejoices; you will grieve, but your grief will become joy.
-
-            So you also are now in anguish. But I will see you again, and your hearts will rejoice, and no one will take your joy away from you."
-            """,
-            response: "The Gospel of the Lord. Praise to you, Lord Jesus Christ."),
-    ]
-
-    private var readingsCard: some View {
-        LumenCard(padding: 0) {
-            VStack(spacing: 0) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Eyebrow(text: "Mass · \(weekday) of the 6th Week", color: pal.accent)
-                        Text("Today's Readings")
-                            .font(LumenType.display(22))
-                            .foregroundStyle(t.ink)
-                    }
-                    Spacer()
-                    Text("~12 min").font(LumenType.ui(11)).foregroundStyle(t.inkSoft)
-                }
-                .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 12)
-
-                ForEach(Array(readings.enumerated()), id: \.offset) { i, r in
-                    NavigationLink(value: DailyRoute.reading(r)) {
-                        readingRow(index: i, reading: r)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                HStack {
-                    Text("Read with audio").font(LumenType.ui(12)).foregroundStyle(t.inkMid)
-                    Spacer()
-                    HStack(spacing: 6) {
-                        Image(systemName: "play.fill").font(.system(size: 10))
-                        Text("Begin").font(LumenType.ui(12, weight: .medium))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(pal.accent, in: .capsule)
-                }
-                .padding(.horizontal, 20).padding(.vertical, 12)
-                .background(t.surface2)
-                .overlay(Rectangle().fill(t.ruleSoft).frame(height: 0.5), alignment: .top)
+    private func loadReadingPreviews() async {
+        guard let readings else { return }
+        for r in readings where readingPreviews[r.citation] == nil {
+            let verses = await BibleService.shared.verses(forCitation: r.citation)
+            if let first = verses.first?.text, !first.isEmpty {
+                readingPreviews[r.citation] = first
             }
         }
     }
 
+    private static let readingNumerals = ["i", "ii", "iii", "iv"]
+
+    @ViewBuilder
+    private var readingsCard: some View {
+        if let readings, !readings.isEmpty {
+            LumenCard(padding: 0) {
+                VStack(spacing: 0) {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Eyebrow(text: "Mass · \(massEyebrowSuffix)", color: pal.accent)
+                            Text("Today's Readings")
+                                .font(LumenType.display(22))
+                                .foregroundStyle(t.ink)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 12)
+
+                    ForEach(Array(readings.enumerated()), id: \.offset) { i, r in
+                        NavigationLink(value: DailyRoute.reading(r)) {
+                            readingRow(index: i, reading: r)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    /// e.g. "Trinity Sunday" on a Solemnity; weekday-of-season otherwise.
+    private var massEyebrowSuffix: String {
+        if let day = liturgy.today, !day.isFeria { return day.celebration }
+        return "\(weekday) · \(liturgy.today?.season ?? pal.name)"
+    }
+
     private func readingRow(index i: Int, reading r: ReadingItem) -> some View {
         HStack(spacing: 14) {
-            Text(["i", "ii", "iii"][i])
+            Text(i < Self.readingNumerals.count ? Self.readingNumerals[i] : "\(i + 1)")
                 .font(LumenType.display(16, weight: .semibold).italic())
                 .foregroundStyle(pal.accent)
                 .frame(width: 30, height: 30)
@@ -175,10 +164,12 @@ struct DailyView: View {
                 .overlay(Circle().strokeBorder(t.rule, lineWidth: 0.5))
             VStack(alignment: .leading, spacing: 3) {
                 Eyebrow(text: "\(r.label) · \(r.citation)", color: t.inkSoft)
-                Text(r.body.replacingOccurrences(of: "\n", with: " "))
-                    .font(LumenType.serif(14))
-                    .foregroundStyle(t.ink)
-                    .lineLimit(1)
+                if let preview = readingPreviews[r.citation], !preview.isEmpty {
+                    Text(preview)
+                        .font(LumenType.serif(14))
+                        .foregroundStyle(t.ink)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right").font(.system(size: 13)).foregroundStyle(t.inkSoft)
@@ -270,6 +261,14 @@ struct DailyView: View {
             try? context.save()
         }
         prayed.toggle()
+    }
+
+    /// Header eyebrow — prefers the real liturgical day when loaded; falls back to
+    /// the locally-computed season + weekday when offline or still loading.
+    private var headerEyebrow: String {
+        guard let day = liturgy.today else { return "\(pal.name) · \(weekday)" }
+        if day.isFeria { return "\(day.season ?? pal.name) · \(weekday)" }
+        return day.celebration
     }
 
     private var weekday: String { now.formatted(.dateTime.weekday(.wide)) }
