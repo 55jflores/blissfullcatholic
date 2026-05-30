@@ -62,7 +62,7 @@ struct DailyView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .task { await liturgy.loadToday() }
-            .task(id: liturgy.today?.date) { await loadReadingPreviews() }
+            .task(id: liturgy.today?.date) { await loadFirstVerses() }
         }
         .sheet(isPresented: $showReflection) {
             AIReflectionView(
@@ -83,17 +83,51 @@ struct DailyView: View {
 
     // MARK: Verse hero
 
+    /// Verse of the day: the first verse of today's Gospel, resolved against
+    /// bundled WEBCE. Nil while loading or if today's readings haven't arrived.
+    private var verseHero: (text: String, citation: String)? {
+        guard let gospel = gospelReading,
+              let first = firstVerses[gospel.citation] else { return nil }
+        let book = Self.bookName(fromCitation: gospel.citation)
+        return (first.text, "\(book) \(first.chapter):\(first.verse)")
+    }
+
+    private var gospelReading: ReadingItem? {
+        readings?.first(where: { $0.label == "Gospel" })
+    }
+
+    /// "Mark 11:11-26" → "Mark"; "1 Peter 4:7-13" → "1 Peter". Takes everything
+    /// before the last whitespace that precedes the chapter:verse colon.
+    private static func bookName(fromCitation citation: String) -> String {
+        guard let colon = citation.firstIndex(of: ":") else { return citation }
+        let head = citation[..<colon]
+        guard let lastSpace = head.lastIndex(of: " ") else { return String(head) }
+        return String(citation[..<lastSpace])
+    }
+
+    @ViewBuilder
     private var verse: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("“The Lord has truly been raised, and has appeared to Simon.”")
-                .font(LumenType.display(26, weight: .medium).italic())
-                .foregroundStyle(t.ink)
-                .lineSpacing(4)
-            Eyebrow(text: "Luke 24:34", color: t.inkSoft)
+            if let hero = verseHero {
+                Text("\u{201C}\(hero.text)\u{201D}")
+                    .font(LumenType.display(26, weight: .medium).italic())
+                    .foregroundStyle(t.ink)
+                    .lineSpacing(4)
+                Eyebrow(text: hero.citation, color: t.inkSoft)
+            } else {
+                Text("Today's word is being prepared.")
+                    .font(LumenType.display(26, weight: .medium).italic())
+                    .foregroundStyle(t.ink)
+                    .lineSpacing(4)
+                    .redacted(reason: .placeholder)
+                Eyebrow(text: "Scripture", color: t.inkSoft)
+                    .redacted(reason: .placeholder)
+            }
         }
         .padding(.horizontal, 24)
         .padding(.top, 6)
         .padding(.bottom, 22)
+        .animation(.easeInOut(duration: 0.35), value: verseHero?.citation)
     }
 
     // MARK: Mass readings
@@ -105,16 +139,17 @@ struct DailyView: View {
         return raw.map { ReadingItem(label: $0.label, citation: $0.citation) }
     }
 
-    /// First-verse preview text per citation, resolved from bundled WEBCE.
-    /// Populated by `loadReadingPreviews()` once readings are known.
-    @State private var readingPreviews: [String: String] = [:]
+    /// First verse per reading citation, resolved from bundled WEBCE. Serves two
+    /// surfaces: the row preview text, and the verse-of-the-day hero (which
+    /// needs the full BibleVerse for its chapter:verse eyebrow).
+    @State private var firstVerses: [String: BibleVerse] = [:]
 
-    private func loadReadingPreviews() async {
+    private func loadFirstVerses() async {
         guard let readings else { return }
-        for r in readings where readingPreviews[r.citation] == nil {
+        for r in readings where firstVerses[r.citation] == nil {
             let verses = await BibleService.shared.verses(forCitation: r.citation)
-            if let first = verses.first?.text, !first.isEmpty {
-                readingPreviews[r.citation] = first
+            if let first = verses.first, !first.text.isEmpty {
+                firstVerses[r.citation] = first
             }
         }
     }
@@ -164,7 +199,7 @@ struct DailyView: View {
                 .overlay(Circle().strokeBorder(t.rule, lineWidth: 0.5))
             VStack(alignment: .leading, spacing: 3) {
                 Eyebrow(text: "\(r.label) · \(r.citation)", color: t.inkSoft)
-                if let preview = readingPreviews[r.citation], !preview.isEmpty {
+                if let preview = firstVerses[r.citation]?.text, !preview.isEmpty {
                     Text(preview)
                         .font(LumenType.serif(14))
                         .foregroundStyle(t.ink)

@@ -13,15 +13,20 @@
 import Foundation
 
 // MARK: - On-disk model (Decodable, matches webce.json)
+//
+// Marked `nonisolated` because the target is compiled with default-isolation
+// MainActor. Without it, the synthesized Decodable conformance would be
+// inferred as @MainActor and could not be used from BibleService's detached
+// background-priority load task.
 
-struct Bible: Decodable {
+nonisolated struct Bible: Decodable {
     let translation: String          // "WEB-CE"
     let name: String                 // "World English Bible (Catholic Edition)"
     let license: String              // "Public Domain"
     let books: [BibleBook]
 }
 
-struct BibleBook: Decodable {
+nonisolated struct BibleBook: Decodable {
     let code: String                 // USFM code: "GEN", "JHN", "1PE", "SIR", …
     let name: String                 // "Genesis", "John", "1 Peter", "Sirach", …
     /// chapter (as a string-keyed Int) → verse (string-keyed Int) → text.
@@ -33,7 +38,7 @@ struct BibleBook: Decodable {
 
 /// A structured Bible reference. Spans one or more verses, possibly across
 /// chapters (e.g., "1 Cor 12:31—13:13").
-struct BibleReference: Hashable, Sendable {
+nonisolated struct BibleReference: Hashable, Sendable {
     let book: String                 // USFM code
     let startChapter: Int
     let startVerse: Int
@@ -57,7 +62,7 @@ struct BibleReference: Hashable, Sendable {
 }
 
 /// A single verse for display.
-struct BibleVerse: Identifiable, Hashable, Sendable {
+nonisolated struct BibleVerse: Identifiable, Hashable, Sendable {
     let book: String                 // USFM code
     let chapter: Int
     let verse: Int

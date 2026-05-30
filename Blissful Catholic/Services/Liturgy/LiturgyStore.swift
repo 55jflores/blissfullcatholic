@@ -61,17 +61,10 @@ final class LiturgyStore {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            guard status == 200 else {
-                print("⛪️ [Liturgy] HTTP \(status) for \(url)")
-                return
-            }
-            let decoded = try JSONDecoder().decode(LiturgicalDay.self, from: data)
-            today = decoded
-            print("⛪️ [Liturgy] loaded \(decoded.date) — \(decoded.celebration); readings: \(decoded.readings?.count ?? 0)")
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+            today = try JSONDecoder().decode(LiturgicalDay.self, from: data)
         } catch {
             // Offline / decode failure — leave `today` as-is; UI falls back.
-            print("⛪️ [Liturgy] failed \(url): \(error)")
         }
     }
 

@@ -13,7 +13,10 @@
 
 import Foundation
 
-enum CitationParser {
+/// Pure citation parsing — marked `nonisolated` so callers from any actor
+/// context (including BibleService's `nonisolated` wrapper and detached load
+/// task) can use it synchronously under the project's default-MainActor mode.
+nonisolated enum CitationParser {
 
     /// Parse a citation string into one or more structured references.
     /// Returns an empty array if no valid book/range could be identified.
