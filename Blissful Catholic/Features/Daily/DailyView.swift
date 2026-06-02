@@ -13,6 +13,7 @@ import SwiftData
 enum DailyRoute: Hashable {
     case reading(ReadingItem)
     case saint(Saint)
+    case devotion(MonthlyDevotion)
     case reflection
     case intentions
 }
@@ -55,6 +56,7 @@ struct DailyView: View {
                         reflectWithAI
                         readingsCard
                         saintCard
+                        devotionCard
                         reflectionCard
                         intentionCard
                     }
@@ -67,12 +69,14 @@ struct DailyView: View {
                 switch route {
                 case .reading(let r):  ReadingScreen(reading: r)
                 case .saint(let s):    SaintScreen(saint: s)
+                case .devotion(let d): MonthlyDevotionScreen(devotion: d)
                 case .reflection:      ReflectionScreen()
                 case .intentions:      IntentionsListView()
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
             .task { await liturgy.loadToday() }
+            .task { await loadMonthlyDevotion() }
             .task(id: liturgy.today?.date) { await loadFirstVerses() }
             .task(id: liturgy.today?.celebration) { await loadSaint() }
             .task(id: liturgy.today?.date) { await loadDailyReflection() }
@@ -306,6 +310,84 @@ struct DailyView: View {
                             Spacer(minLength: 0)
                             Text(saint.blurb)
                                 .font(LumenType.serif(12)).foregroundStyle(t.inkMid).lineSpacing(2)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(14)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: Monthly devotion
+
+    /// This month's traditional Catholic devotion (Sacred Heart in June, Holy
+    /// Rosary in October, …). Twelve fixed entries — one per month — so this is
+    /// never nil in practice unless the catalog fails to load from the bundle.
+    @State private var monthlyDevotion: MonthlyDevotion?
+
+    /// Loaded once on view appear from the system calendar's current month.
+    /// The devotion is a month-long anchor, so there's no need to re-load when
+    /// the liturgical day rolls over — the calendar month is what matters here.
+    private func loadMonthlyDevotion() async {
+        monthlyDevotion = await MonthlyDevotionService.shared.devotion(for: Date())
+    }
+
+    /// Resolve the bundled devotion painting. Same flat-bundle lookup as
+    /// `bundledArtwork(for: Saint)` — Xcode 16 synchronized groups put every
+    /// resource at the bundle root, so the key alone is the lookup.
+    private func bundledArtwork(for devotion: MonthlyDevotion) -> UIImage? {
+        guard let url = Bundle.main.url(forResource: devotion.key, withExtension: "jpg"),
+              let data = try? Data(contentsOf: url)
+        else { return nil }
+        return UIImage(data: data)
+    }
+
+    /// 140×170 thumbnail — matches the saint card's slot so the two cards read
+    /// as a visual pair (today's person + this month's anchor). Falls back to
+    /// the procedural `ArtPlate` when no curated painting is bundled.
+    @ViewBuilder
+    private func devotionArtThumbnail(for devotion: MonthlyDevotion) -> some View {
+        if let uiImage = bundledArtwork(for: devotion) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 140, height: 170)
+                .clipped()
+        } else {
+            ArtPlate(label: devotion.name.uppercased(), hue: 28,
+                     width: 140, height: 170, cornerRadius: 0)
+        }
+    }
+
+    /// Mirrors the saint card layout — painting thumbnail on the left, text on
+    /// the right. Drills into `MonthlyDevotionScreen` with the full artwork.
+    @ViewBuilder
+    private var devotionCard: some View {
+        if let devotion = monthlyDevotion {
+            NavigationLink(value: DailyRoute.devotion(devotion)) {
+                LumenCard(padding: 0) {
+                    HStack(spacing: 14) {
+                        devotionArtThumbnail(for: devotion)
+                            .clipShape(.rect(cornerRadius: 8))
+                        VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Eyebrow(text: devotion.subtitle, color: pal.accent)
+                                Text(devotion.name)
+                                    .font(LumenType.display(20))
+                                    .foregroundStyle(t.ink)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.85)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                            Text(devotion.intro)
+                                .font(LumenType.serif(12))
+                                .foregroundStyle(t.inkMid)
+                                .lineSpacing(2)
+                                .lineLimit(4)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }

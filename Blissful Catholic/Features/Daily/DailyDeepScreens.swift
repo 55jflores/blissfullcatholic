@@ -353,6 +353,165 @@ struct SaintScreen: View {
     }
 }
 
+// MARK: - Monthly Devotion
+
+/// Deep screen for the month's traditional Catholic devotion (Sacred Heart in
+/// June, Holy Rosary in October, and so on). Mirrors `SaintScreen` in shape —
+/// artwork hero, body paragraphs, AI CTA — but with content drawn from
+/// `monthly-devotions.json`.
+struct MonthlyDevotionScreen: View {
+    let devotion: MonthlyDevotion
+    @Environment(\.lumenTokens) private var t
+    @Environment(\.lumenPalette) private var pal
+    @Environment(\.dismiss) private var dismiss
+    @State private var showReflect = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LumenDeepHeader(eyebrow: headerEyebrow, title: devotion.name,
+                            onBack: { dismiss() })
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    artworkHeader
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        Eyebrow(text: devotion.subtitle, color: pal.accent)
+                        Text(devotion.name)
+                            .font(LumenType.display(32))
+                            .foregroundStyle(t.ink)
+                            .tracking(-0.5)
+                            .padding(.top, 8)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Ornament(color: pal.accent).padding(.vertical, 22)
+
+                        Text(devotion.intro)
+                            .font(LumenType.display(18).italic())
+                            .foregroundStyle(t.ink)
+                            .lineSpacing(5)
+                            .padding(.bottom, 18)
+
+                        VStack(alignment: .leading, spacing: 14) {
+                            ForEach(Array(reflectionParagraphs.enumerated()),
+                                    id: \.offset) { _, p in
+                                Text(p)
+                                    .font(LumenType.serif(15))
+                                    .foregroundStyle(t.ink)
+                                    .lineSpacing(6)
+                            }
+                        }
+
+                        attributionFooter
+
+                        AICTAButton(title: "Reflect on this devotion",
+                                    subtitle: "Pray with the month's intention") {
+                            showReflect = true
+                        }
+                        .padding(.top, 28)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 20)
+                    .padding(.bottom, 140)
+                }
+            }
+        }
+        .background(t.bg.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showReflect) {
+            AIReflectionView(
+                feature: "devotion",
+                prompt: reflectPrompt,
+                title: devotion.name,
+                reason: "Sign in to reflect on the month's devotion."
+            )
+        }
+    }
+
+    // MARK: Derived
+
+    /// Eyebrow above the title — the full month name. Reads naturally
+    /// alongside the devotion's title ("June · The Sacred Heart of Jesus").
+    private var headerEyebrow: String {
+        let comps = DateComponents(month: devotion.month)
+        guard let date = Calendar.current.date(from: comps) else { return "" }
+        return date.formatted(.dateTime.month(.wide))
+    }
+
+    private var reflectionParagraphs: [String] {
+        devotion.reflection.components(separatedBy: "\n\n")
+    }
+
+    /// Hero artwork. Same Color.clear-overlay trick as `SaintScreen.artworkHeader`
+    /// — without it, an aspect-fill image will balloon its parent VStack to the
+    /// image's intrinsic width and drag the body text off-screen.
+    @ViewBuilder
+    private var artworkHeader: some View {
+        if let uiImage = bundledArtwork {
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: 320)
+                .overlay {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                }
+                .clipShape(.rect(cornerRadius: 12))
+                .padding(.horizontal, 24)
+                .padding(.top, 4)
+        } else {
+            ArtPlate(label: devotion.name.uppercased(), hue: 28,
+                     height: 260, cornerRadius: 0)
+        }
+    }
+
+    /// Resolve the bundled painting at `Resources/devotion-art/{key}.jpg`. Xcode
+    /// flattens synchronized folders so the file is at the bundle root.
+    private var bundledArtwork: UIImage? {
+        guard let url = Bundle.main.url(forResource: devotion.key, withExtension: "jpg"),
+              let data = try? Data(contentsOf: url)
+        else { return nil }
+        return UIImage(data: data)
+    }
+
+    /// Honest provenance, parallel to `SaintScreen.attributionFooter`.
+    private var attributionFooter: some View {
+        VStack(spacing: 4) {
+            if let artwork = devotion.artwork {
+                Text("\(artwork.artist) · \(artwork.title) (\(artwork.year))")
+                    .font(LumenType.ui(10).italic())
+                    .foregroundStyle(t.inkSoft)
+                    .multilineTextAlignment(.center)
+                Text(artwork.source)
+                    .font(LumenType.ui(9))
+                    .foregroundStyle(t.inkSoft.opacity(0.7))
+                    .multilineTextAlignment(.center)
+            }
+            Text("Grounded in the Roman Missal, the Catechism, and the traditions of the Church. Devotional prose written for Blissful Catholic.")
+                .font(LumenType.ui(10).italic())
+                .foregroundStyle(t.inkSoft)
+                .multilineTextAlignment(.center)
+                .padding(.top, devotion.artwork == nil ? 0 : 8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 28)
+    }
+
+    /// Prompt seed for the AI sheet — grounds the model in the devotion's own
+    /// text rather than the model's general knowledge of Catholic tradition.
+    private var reflectPrompt: String {
+        """
+        Help me pray with the Catholic devotion of \(devotion.name) — the traditional focus of \(devotion.subtitle.lowercased()).
+
+        Background:
+        \(devotion.intro)
+
+        \(devotion.reflection)
+
+        Offer a brief, personal reflection — just a few sentences — and one specific way I can carry this devotion into today.
+        """
+    }
+}
+
 // MARK: - Reflection
 
 /// Renders today's AI-generated reflection from `DailyReflectionStore`. The home
